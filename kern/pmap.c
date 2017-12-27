@@ -153,7 +153,9 @@ mem_init(void)
 	//////////////////////////////////////////////////////////////////////
 	// Make 'envs' point to an array of size 'NENV' of 'struct Env'.
 	// LAB 3: Your code here.
-
+	envs = (struct Env *)boot_alloc(NENV * sizeof(struct Env));
+	memset(pages, 0, NENV* sizeof(struct Env));
+	
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
 	// up the list of free physical pages. Once we've done so, all further
@@ -188,7 +190,7 @@ mem_init(void)
 	//    - the new image at UENVS  -- kernel R, user R
 	//    - envs itself -- kernel RW, user NONE
 	// LAB 3: Your code here.
-
+	boot_map_region(kern_pgdir, UENVS, PTSIZE, PADDR(envs), PTE_U |PTE_P);
 	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
 	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
@@ -274,35 +276,43 @@ page_init(void)
 	// Change the code to reflect this.
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
-	size_t i;
-	uint32_t pa;
-	page_free_list = NULL;
-	for (i = 0; i < npages; i++) {
-		if(i == 0){
-			pages[i].pp_ref = 1;
-			pages[i].pp_link = NULL;
-			continue;
-		}
-		else if(i<npages_basemem)
-		{
-			pages[i].pp_ref = 0;
+	//size_t i;
+	//uint32_t pa;
+	//page_free_list = NULL;
+	//for (i = 0; i < npages; i++) {
+	//	if(i == 0){
+	//		pages[i].pp_ref = 1;
+	//		pages[i].pp_link = NULL;
+	//		continue;
+	//	}
+	//	else if(i<npages_basemem)
+	//	{
+	//		pages[i].pp_ref = 0;
+	//		pages[i].pp_link = page_free_list;
+	//		page_free_list = &pages[i];
+	//	}
+	//	else if(i <= (EXTPHYSMEM / PGSIZE) || 	i < (((uint32_t)boot_alloc(0) - KERNBASE) >> PGSHIFT))
+	//	{
+	//		pages[i].pp_ref++;
+	//		pages[i].pp_link = NULL;
+	//	}
+	//	else{
+	//	pages[i].pp_ref = 0;
+	//	pages[i].pp_link = page_free_list;
+	//	page_free_list = &pages[i];
+	//	}
+	//	pa = page2pa(&pages[i]);
+	//	if((pa == 0 || (pa >= IOPHYSMEM && pa <= ((uint32_t) boot_alloc(0) - KERNBASE) >> PGSHIFT))	&& (pages[i].pp_ref == 0)){
+	//cprintf("page error: i %d\n", i);	
+	//}
+	//}
+	size_t left_i = PGNUM(IOPHYSMEM);
+	size_t right_i = PGNUM(PADDR(envs + NENV));
+	for(size_t i = 1; i < npages; i++){
+		if(left_i > i || i > right_i){
 			pages[i].pp_link = page_free_list;
 			page_free_list = &pages[i];
-		}
-		else if(i <= (EXTPHYSMEM / PGSIZE) || 	i < (((uint32_t)boot_alloc(0) - KERNBASE) >> PGSHIFT))
-		{
-			pages[i].pp_ref++;
-			pages[i].pp_link = NULL;
-		}
-		else{
-		pages[i].pp_ref = 0;
-		pages[i].pp_link = page_free_list;
-		page_free_list = &pages[i];
-		}
-		pa = page2pa(&pages[i]);
-		if((pa == 0 || (pa >= IOPHYSMEM && pa <= ((uint32_t) boot_alloc(0) - KERNBASE) >> PGSHIFT))	&& (pages[i].pp_ref == 0)){
-	cprintf("page error: i %d\n", i);	
-	}
+		}	
 	}
 }
 
@@ -575,7 +585,14 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
-
+	uintptr_t high = ROUNDUP((uintptr_t)va + len, PGSIZE);
+	for(uintptr_t low = (uintptr_t)va; low < high; low = ROUNDUP(low + 1, PGSIZE)){
+		pte_t *pte = pgdir_walk(env->env_pgdir, (void*)low, false);
+		if (!pte || (~(*pte) & perm) || low >= ULIM) {
+			user_mem_check_addr = low;
+			return -E_FAULT;
+		}
+	}
 	return 0;
 }
 
